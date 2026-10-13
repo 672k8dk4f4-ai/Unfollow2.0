@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Аккаунты для отписки</title>
+<style>
+  :root{
+    --bg:#0f0f14;
+    --card:#1a1a22;
+    --card-hover:#22222c;
+    --card-done:#141a14;
+    --text:#eaeaf0;
+    --muted:#8a8a99;
+    --accent:#e1306c;
+    --accent-hover:#c9255c;
+    --green:#2ecc71;
+    --green-dim:#1e7a44;
+    --border:#2a2a35;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    padding:24px 16px 80px;
+  }
+  h1{font-size:20px;margin:0 0 6px;text-align:center}
+  .count{text-align:center;color:var(--muted);font-size:14px;margin-bottom:14px}
+
+  /* Прогресс */
+  .progress-wrap{
+    max-width:720px;margin:0 auto 18px;
+    background:var(--card);border-radius:12px;padding:14px 16px;
+    border:1px solid var(--border);
+  }
+  .progress-top{
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:14px;margin-bottom:8px;
+  }
+  .progress-top b{color:var(--green)}
+  .bar{
+    height:8px;background:#2a2a35;border-radius:6px;overflow:hidden;
+  }
+  .bar-fill{
+    height:100%;width:0;background:linear-gradient(90deg,var(--green-dim),var(--green));
+    transition:width .25s ease;
+  }
+
+  /* Тулбар */
+  .toolbar{
+    max-width:720px;margin:0 auto 18px;
+    display:flex;gap:10px;flex-wrap:wrap;
+  }
+  .toolbar input{
+    flex:1;min-width:180px;
+    padding:10px 14px;border-radius:10px;border:1px solid var(--border);
+    background:var(--card);color:var(--text);font-size:14px;outline:none;
+  }
+  .toolbar input:focus{border-color:var(--accent)}
+  .toolbar button{
+    padding:10px 14px;border-radius:10px;border:1px solid var(--border);
+    background:var(--card);color:var(--text);font-size:13px;cursor:pointer;
+    transition:background .15s ease;
+  }
+  .toolbar button:hover{background:var(--card-hover)}
+  .toolbar button.active{border-color:var(--accent);color:var(--accent)}
+
+  /* Список */
+  .list{
+    max-width:720px;margin:0 auto;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .row{
+    display:flex;align-items:center;gap:10px;
+    background:var(--card);padding:10px 12px;border-radius:12px;
+    transition:background .15s ease;
+  }
+  .row:hover{background:var(--card-hover)}
+  .row.done{background:var(--card-done);opacity:.6}
+  .row.done .name{text-decoration:line-through;color:var(--muted)}
+
+  .row .num{
+    color:var(--muted);font-size:12px;width:28px;text-align:right;flex-shrink:0;
+  }
+  .row input[type="checkbox"]{
+    width:18px;height:18px;accent-color:var(--green);cursor:pointer;flex-shrink:0;
+  }
+  .row .name{
+    flex:1;font-size:14px;word-break:break-all;cursor:pointer;
+  }
+  .row .date{
+    color:var(--muted);font-size:11px;white-space:nowrap;flex-shrink:0;
+  }
+  .row .actions{
+    display:flex;gap:6px;flex-shrink:0;
+  }
+  .row a.btn, .row button.btn{
+    display:inline-block;padding:7px 12px;border-radius:8px;
+    border:none;text-decoration:none;font-size:12px;font-weight:600;
+    cursor:pointer;white-space:nowrap;transition:background .15s ease,transform .1s ease;
+  }
+  .row a.btn{
+    background:var(--accent);color:#fff;
+  }
+  .row a.btn:hover{background:var(--accent-hover)}
+  .row button.btn.unfollow{
+    background:var(--accent);color:#fff;
+  }
+  .row button.btn.unfollow:hover{background:var(--accent-hover)}
+  .row button.btn.done-btn{
+    background:var(--green-dim);color:#fff;
+  }
+  .row button.btn.done-btn:hover{background:var(--green)}
+  .row button.btn:active, .row a.btn:active{transform:scale(.96)}
+
+  /* Мобилка */
+  @media (max-width:520px){
+    .row{flex-wrap:wrap}
+    .row .date{display:none}
+    .row .actions{margin-left:auto}
+  }
+</style>
+</head>
+<body>
+
+<h1>Аккаунты для отписки</h1>
+<div class="count" id="count"></div>
+
+<div class="progress-wrap">
+  <div class="progress-top">
+    <span>Отписано: <b id="doneCount">0</b> / <span id="totalCount">0</span></span>
+    <span id="percent">0%</span>
+  </div>
+  <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+</div>
+
+<div class="toolbar">
+  <input id="search" type="text" placeholder="Поиск по нику...">
+  <button id="sortDate" class="active" title="Сначала те, на кого подписался позже всех">По дате подписки</button>
+  <button id="sortAlpha" title="По алфавиту">А–Я</button>
+  <button id="resetBtn" title="Сбросить все отметки">Сбросить отметки</button>
+</div>
+
+<div class="list" id="list"></div>
+
+<script>
+/* ============================================================
+   Данные: username + timestamp (когда ты подписался, unix-секунды)
+   Взято из following.json. Порядок — по убыванию даты.
+   ============================================================ */
+const accounts = [
+  {u:"barskihlera",t:1791887252},
+  {u:"dasha_klyuchnikova",t:1791886378},
+  {u:"prosto_viktor_serebrennikov",t:1791882085},
+  {u:"mr_zhmihov",t:1791868029},
+  {u:"ikatevibe",t:1791757424},
+  {u:"trulyummy",t:1791756573},
+  {u:"yyy.bezenkova",t:1791753597},
+  {u:"ec.laira",t:1791735685},
+  {u:"ryumka.bar",t:1791641289},
+  {u:"sf_00326",t:1791600970},
+  {u:"vfreka",t:1791600964},
+  {u:"annaandrusenko44",t:1791600299},
+  {u:"linaonelv",t:1791412713},
+  {u:"doyvber",t:1791202909},
+  {u:"verabaksheeva",t:1791194898},
+  {u:"kristinatarasova_",t:1790874080},
+  {u:"r1na_sk1",t:1790794614},
+  {u:"warhammer_vip",t:1790788385},
+  {u:"santamaria_gta5",t:1790683940},
+  {u:"mirell_sunshine",t:1790682884},
+  {u:"morkovinka_kes",t:1790604869},
+  {u:"sivaeva",t:1790383298},
+  {u:"leshavelmatown",t:1790252424},
+  {u:"stra.zha",t:1790252175},
+  {u:"chessmarta_shop",t:1790179793},
+  {u:"tok_impulse",t:1790146192},
+  {u:"olya_malashchenko",t:1790012413},
+  {u:"helgametamorphosis",t:1789827901},
+  {u:"orlov_skvz",t:1789669488},
+  {u:"shinaryen_",t:1789669468},
+  {u:"ellefanning",t:1789669438},
+  {u:"alexandradaddario",t:1789630182},
+  {u:"birzhanashim",t:1789474582},
+  {u:"semion.tropnikov",t:1789474489},
+  {u:"lonely_daimyo",t:1789380615},
+  {u:"diyanaaywyt",t:1789318713},
+  {u:"savmrg",t:1789191364},
+  {u:"myrockchannel",t:1788998978},
+  {u:"ivy.pavlova",t:1788961274},
+  {u:"amanikssa",t:1788918695},
+  {u:"romeropanamerax",t:1788918150},
+  {u:"s_bezrukov",t:1788836241},
+  {u:"rmnv_al",t:1788705146},
+  {u:"dorimmmon",t:1788652878},
+  {u:"aeo.aa",t:1788625293},
+  {u:"nickvoroninmusic",t:1788615822},
+  {u:"tasyapicks",t:1788420090},
+  {u:"ri.is.art",t:1788370443},
+  {u:"celinerenxx",t:1788093924},
+  {u:"kivokha",t:1788035934},
+  {u:"anlinaw_",t:1788035852},
+  {u:"avtopilot03",t:1787926264},
+  {u:"beast_in_chains_flava",t:1787924414},
+  {u:"bigboyraze",t:1787838309},
+  {u:"avengers",t:1787682016},
+  {u:"marvel",t:1787682015},
+  {u:"marvelstudios",t:1787682011},
+  {u:"skatrins_vie",t:1787635257},
+  {u:"kondaurovdanya",t:1787595796},
+  {u:"hmwri.notes",t:1787496638},
+  {u:"sergei.sporyshev",t:1787489773},
+  {u:"alisochkad",t:1787360684},
+  {u:"april28lit",t:1787310828},
+  {u:"munsloon",t:1787237030},
+  {u:"ellaxalexandra",t:1787119486},
+  {u:"knifeang4l",t:1787038747},
+  {u:"nektofil",t:1786906531},
+  {u:"robertdowneyjr",t:1786876180},
+  {u:"zima.jewelry.brand",t:1786788811},
+  {u:"leryasv",t:1786637649},
+  {u:"viktoriavasina",t:1786578760},
+  {u:"ks.shkaa",t:1786571148},
+  {u:"curigato",t:1786571097},
+  {u:"bunnybucks_club",t:1786532663},
+  {u:"majaworska",t:1786341003},
+  {u:"_fofanova1",t:1786339114},
+  {u:"danna_nunez0",t:1786332241},
+  {u:"_.kaarolav._",t:1786329135},
+  {u:"axxanny",t:1786329127},
+  {u:"ana.movse",t:1786324794},
+  {u:"angelina_dimova",t:1786188259},
+  {u:"meow_mirra",t:1786106263},
+  {u:"vvvvvvvvvv.v.vv",t:1786082513},
+  {u:"xyettta",t:1785999613},
+  {u:"b_o_s_t_o_n_19",t:1785970468},
+  {u:"serrrbest",t:1785968455},
+  {u:"55.2.22",t:1785894468},
+  {u:"misssducati",t:1785859520},
+  {u:"lapin.house38",t:1785776940},
+  {u:"desire_most",t:1785761121},
+  {u:"devilish__sunset",t:1785689896},
+  {u:"ctr.stella",t:1785468914},
+  {u:"delete.doll",t:1785419254},
+  {u:"askhaev_team",t:1785412044},
+  {u:"antokhinx",t:1785144762},
+  {u:"rofl_leopold",t:1785143785},
+  {u:"yourlevka",t:1785136861},
+  {u:"agamamama.ru",t:1785073339},
+  {u:"allisezzzz",t:1784950195},
+  {u:"olenka_askeza",t:1784931347},
+  {u:"thesashapaige",t:1784931161},
+  {u:"iam.sashadance",t:1784781115},
+  {u:"debbieutr",t:1784754709},
+  {u:"chef.elkoumka",t:1784631321},
+  {u:"sharishanya",t:1784386894},
+  {u:"mimimi.ttt",t:1784242994},
+  {u:"mikoksen",t:1784119440},
+  {u:"este.tikatela",t:1784118485},
+  {u:"qpdona",t:1784086908},
+  {u:"dariaboscorelli",t:1784059091},
+  {u:"sofi.sun.s",t:1783913954},
+  {u:"anna_farberr",t:1783887645},
+  {u:"minaeva.official",t:1783887494},
+  {u:"millasnake",t:1783403889},
+  {u:"spirite_moon",t:1783403875},
+  {u:"diriderx",t:1783403807},
+  {u:"_vikulyalya_67",t:1783370811},
+  {u:"pudderfly",t:1783338109},
+  {u:"lusssty_",t:1783330159},
+  {u:"pche.linceva",t:1783280017},
+  {u:"nabylise",t:1783232545},
+  {u:"iamvary.ss",t:1783109149},
+  {u:"lucky_rat13",t:1783077697},
+  {u:"alex_hal4enok",t:1783077687},
+  {u:"fil_kaaaaa",t:1783077675},
+  {u:"budovskaya_alena",t:1783077671},
+  {u:"_russanova",t:1783075751},
+  {u:"vinogradova__0318",t:1783075744},
+  {u:"jul_zag",t:1783033466},
+  {u:"alina_staritsyna",t:1782898416},
+  {u:"__striga",t:1782847225},
+  {u:"vitammminkka",t:1782833915},
+  {u:"ang_makhotina",t:1782691639},
+  {u:"onlydotaboys",t:1782634962},
+  {u:"anastasia_polgorodnik",t:1782625336},
+  {u:"crazybobapeperony",t:1782456976},
+  {u:"princesssofrussia",t:1782384229},
+  {u:"soro_tsu",t:1782375453},
+  {u:"iamvarya.ss",t:1782361469},
+  {u:"__milka_____n",t:1782344860},
+  {u:"meowsimkaaa",t:1782344717},
+  {u:"olya_mp",t:1782248033},
+  {u:"kunimilas",t:1782125424},
+  {u:"mnrvva",t:1781755145},
+  {u:"dkanulame",t:1781753074},
+  {u:"veronika.safonova13",t:1781694308},
+  {u:"fineapp_ru",t:1781509450},
+  {u:"wpa_import",t:1781453738},
+  {u:"atixsf",t:1781418972},
+  {u:"__sigaretka_",t:1781399637},
+  {u:"kit_stupid_show",t:1781278753},
+  {u:"shcherbakov_alexei",t:1781077820},
+  {u:"lisssommers_voice",t:1781027337},
+  {u:"malllv1na",t:1781025918},
+  {u:"valeraprivet",t:1780927249},
+  {u:"art.senatorov",t:1780854381},
+  {u:"tirrrexy",t:1780425005},
+  {u:"volkovaaa_0",t:1780364989},
+  {u:"si.tenno",t:1780205654},
+  {u:"spotik_irk",t:1779894281},
+  {u:"akana_aaaaa",t:1779894072},
+  {u:"glanikdota",t:1779864620},
+  {u:"kim_reset",t:1779783164},
+  {u:"cyber_bebra",t:1779716292},
+  {u:"anatsosia",t:1779626743},
+  {u:"_boy_138",t:1779626699},
+  {u:"tnwoooy",t:1779626581},
+  {u:"blablabar.chelyabinsk",t:1779450224},
+  {u:"prepodsteam",t:1779410830},
+  {u:"myeye______",t:1779385366},
+  {u:"euthamasia",t:1779299727},
+  {u:"swethso",t:1779263062},
+  {u:"vuradisurafuu",t:1779214592},
+  {u:"grishaborsh",t:1779194941},
+  {u:"d.multic",t:1778975785},
+  {u:"tsukini_suka",t:1778851046},
+  {u:"fill_more.d",t:1778844594},
+  {u:"angelimuk",t:1778747268},
+  {u:"vishnevskaya_arinad",t:1778645096},
+  {u:"laurasvenningsenn",t:1778562702},
+  {u:"skeinst",t:1778494219},
+  {u:"rekryyyt",t:1778488069},
+  {u:"agmeshaav",t:1778486629},
+  {u:"tasyauniverse",t:1778345978},
+  {u:"sofyaamaximova",t:1778168928},
+  {u:"okidooky",t:1778142716},
+  {u:"galin_a0408",t:1777965149},
+  {u:"kiklberi",t:1777859122},
+  {u:"shatun.rp",t:1777859079},
+  {u:"moon.cakeeee",t:1777731645},
+  {u:"amilliana__",t:1777329253},
+  {u:"maybeyeessss",t:1777308453},
+  {u:"q_soo_p",t:1777306524},
+  {u:"qoqsik1",t:1777279268},
+  {u:"k.raiskaia_",t:1777278090},
+  {u:"aveme_lissa",t:1777177422},
+  {u:"wwwscdh",t:1776865463},
+  {u:"blake_vlad",t:1776609647},
+  {u:"govoryakina",t:1776467623},
+  {u:"d_davydov_",t:1776412501},
+  {u:"alice_in_chains._",t:1776344689},
+  {u:"babybanknotes",t:1775861315},
+  {u:"kata.academy",t:1775753432},
+  {u:"justusechannel",t:1775104358},
+  {u:"maaumood",t:1775016029},
+  {u:"st_auto_56",t:1775015099},
+  {u:"lazarevichvioletta",t:1774729505},
+  {u:"_iamli__",t:1774545800},
+  {u:"s.n.gorshkov",t:1774240102},
+  {u:"tinaoyoy",t:1774194702},
+  {u:"semnernova",t:1774176130},
+  {u:"kkkkkkkkkkkkkkkkkkkkkkk___kkkk",t:1774160969},
+  {u:"seen_it_sah",t:1774007650},
+  {u:"kslv_ann",t:1773995888},
+  {u:"dar_lit__",t:1773937599},
+  {u:"el_tema_rogov",t:1773934665},
+  {u:"onegova_s",t:1773933830},
+  {u:"meganfox",t:1773763114},
+  {u:"myagkovmv",t:1773565806},
+  {u:"voscendence",t:1773386379},
+  {u:"pikulev.ivan",t:1773243264},
+  {u:"minibabaykaa",t:1773082069},
+  {u:"kateghiter",t:1773057330},
+  {u:"__aisel__",t:1772949596},
+  {u:"ne_prosto_orchestra",t:1772941094},
+  {u:"oneplans_studio",t:1772864558},
+  {u:"ugnikalnis_",t:1772550626},
+  {u:"vasya_vpiska",t:1772369434},
+  {u:"saintt.nasty",t:1772271202},
+  {u:"pol_cherie",t:1772263740},
+  {u:"sophialesliwe",t:1772261045},
+  {u:"putrefied",t:1772260130},
+  {u:"sham.mirror",t:1772187907},
+  {u:"krillw",t:1772187904},
+  {u:"electric_preacher",t:1772179444},
+  {u:"nastyamulla",t:1771984807},
+  {u:"vikapisareva",t:1771934957},
+  {u:"ti_joyy",t:1771934166},
+  {u:"nyasharisha",t:1771876724},
+  {u:"casher.collection",t:1771875748},
+  {u:"a_griven_",t:1771862079},
+  {u:"grandtourclips",t:1771830526},
+  {u:"hvicha.avto",t:1771818671},
+  {u:"vitaly_kolpin",t:1771817930},
+  {u:"ultimate_survival_world",t:1771799198},
+  {u:"scarrbunny",t:1771654982},
+  {u:"liza.chuvstvuet",t:1771146911},
+  {u:"orvientte",t:1770963869},
+  {u:"lilia_bulina",t:1770931341},
+  {u:"quallityy_",t:1770902500},
+  {u:"_.s.ptashka.d._",t:1770901871},
+  {u:"maxdubrovin_",t:1770872406},
+  {u:"reidbetweenthelimes",t:1770830064},
+  {u:"anna.ankk",t:1770829570},
+  {u:"ilya_filippenko",t:1770591296},
+  {u:"___moonshin_",t:1770486669},
+  {u:"dmitriy_zhuravlev_",t:1770464823},
+  {u:"nurlan__saburov",t:1770464814},
+  {u:"chbd.chbd.chbd",t:1770464810},
+  {u:"naaistee",t:1770464771},
+  {u:"kkrin.k",t:1770461077},
+  {u:"ilya_blanko",t:1770205760},
+  {u:"everything_but_booze",t:1770205294},
+  {u:"tlisliz",t:1770204757},
+  {u:"dostopochtimii",t:1770204283},
+  {u:"di_vk3",t:1770101125},
+  {u:"danila.gorilla",t:1770037402},
+  {u:"vadim_lvk.twitch",t:1769932992},
+  {u:"auto_trainer",t:1769816057},
+  {u:"linaliissun",t:1769808751},
+  {u:"zelya_nah",t:1769684184},
+  {u:"roman_smlnnv",t:1769684169},
+  {u:"spichkax",t:1769369332},
+  {u:"poborchic",t:1769327749},
+  {u:"solazolareal",t:1769320816},
+  {u:"anastasijes",t:1769310805},
+  {u:"kat.doronina",t:1769029372},
+  {u:"lebedevapolya",t:1768881535},
+  {u:"pion_alena",t:1768587301},
+  {u:"missdriada",t:1768523858},
+  {u:"aadrunkk",t:1768408634},
+  {u:"lbabypp",t:1768396071},
+  {u:"vlad_pozhidaev",t:1768348743},
+  {u:"pryanikov38",t:1768338681},
+  {u:"viki.blade",t:1768246661},
+  {u:"routinetwentytwo",t:1768236126},
+  {u:"stalinka_na_mojaike",t:1768235657},
+  {u:"alice_che_",t:1768232739},
+  {u:"evaaa.elfieeee",t:1768023473},
+  {u:"winni.designs",t:1767766396},
+  {u:"andrew_zuzu",t:1767765926},
+  {u:"vitalya_popogrebsky",t:1767763210},
+  {u:"vova_myxamor",t:1767754126},
+  {u:"onlypixyy",t:1767742521},
+  {u:"ellefanningcentral",t:1767689425},
+  {u:"lana.monaaaa",t:1767572627},
+  {u:"wvmlku",t:1767552788},
+  {u:"barhatattoo",t:1767480470},
+  {u:"elizaveta_pozdnyakova",t:1767450120},
+  {u:"felesata",t:1767241467},
+  {u:"lxaer.iuqo",t:1767039505},
+  {u:"dema_kathy",t:1767006340},
+  {u:"aloisav",t:1766821023},
+  {u:"bibsye",t:1766804389},
+  {u:"katekurayhub",t:1766804187},
+  {u:"lilolendis",t:1766750573},
+  {u:"i_am_burry_",t:1766591998},
+  {u:"iwhite_grozny",t:1766507591},
+  {u:"compx_store",t:1766388784},
+  {u:"yana.elis_",t:1766332812},
+  {u:"pnzvaa_omg",t:1766267012},
+  {u:"anastangell.xo",t:1766214109},
+  {u:"by.diwwa",t:1766214080},
+  {u:"iwory.x",t:1766080487},
+  {u:"ellvi_vi",t:1766074923},
+  {u:"voskalexandra",t:1765669489},
+  {u:"pinx_ir",t:1765653909},
+  {u:"annfigmax",t:1765651427},
+  {u:"milaniksova",t:1765647706},
+  {u:"cultsovet",t:1765452652},
+  {u:"banya_euforia_",t:1765031695},
+  {u:"linamontblanc",t:1765018685},
+  {u:"nikollotova",t:1765017727},
+  {u:"aaaaanykaaaaa",t:1765017573},
+  {u:"lilsoldout",t:1764941882},
+  {u:"lucosmolu",t:1764766692},
+  {u:"valya_artemeva",t:1764761970},
+  {u:"rawmilkkitty",t:1764431982},
+  {u:"xlittle_lilo",t:1764431978},
+  {u:"_pani_di",t:1764428807},
+  {u:"coxifoxy_",t:1764428341},
+  {u:"_vdm_nvdmv_",t:1764352794},
+  {u:"katekotaro",t:1764339909},
+  {u:"olivvintage",t:1764339890},
+  {u:"vladaelfie",t:1764320204},
+  {u:"true_sicky",t:1764271689},
+  {u:"__kristinayrieva__",t:1764271628},
+  {u:"ellyqbb",t:1764178418},
+  {u:"pussutoy",t:1764178379},
+  {u:"pluxuryxx",t:1764178363},
+  {u:"killer_katrin",t:1764177552},
+  {u:"clip.face",t:1764077476},
+  {u:"iamalinafomenko",t:1764009713},
+  {u:"dkanula",t:1763948948},
+  {u:"my_marylife",t:1763910546},
+  {u:"ceh_irkutsk",t:1763773277},
+  {u:"hello_borisz",t:1763443185},
+  {u:"luclvora",t:1763409927},
+  {u:"voroninnaaa",t:1763409922},
+  {u:"etogoodmo",t:1763409916},
+  {u:"hancsi_._",t:1763409893},
+  {u:"stormclouddiary",t:1763400171},
+  {u:"na.mill",t:1763283852},
+  {u:"s_adrianova",t:1763258963},
+  {u:"sweetsosqua1",t:1762929854},
+  {u:"shtreniki_family",t:1762881766},
+  {u:"aleksandra_shichalina",t:1762838081},
+  {u:"ronkivvva",t:1762627927},
+  {u:"sofiykko",t:1762419071},
+  {u:"fox7812",t:1762344718},
+  {u:"abricoss_a",t:1762061675},
+  {u:"peachicreami",t:1762019125},
+  {u:"jey.mozi",t:1762002356},
+  {u:"ffatratt",t:1761815928},
+  {u:"curly_elistratova",t:1761815743},
+  {u:"gerasimovamet",t:1761804044},
+  {u:"chernasova.sofia",t:1761744869},
+  {u:"angel_nestis",t:1761717555},
+  {u:"juli_milavi",t:1761488957},
+  {u:"baturinnikita",t:1761488841},
+  {u:"alina_vippppiii227",t:1761394495},
+  {u:"vladislava.tvs",t:1761309583},
+  {u:"maku_rasan",t:1761309572},
+  {u:"mellstroy",t:1761309041},
+  {u:"reblok_nik666",t:1761268334},
+  {u:"leshie.travel",t:1761244058},
+  {u:"elizaveta_belle",t:1761157159},
+  {u:"vaga_tornadooo",t:1761107907},
+  {u:"bbrryysss",t:1760938828},
+  {u:"rezkiy.parts",t:1760610066},
+  {u:"born.fra",t:1760604504},
+  {u:"9bitez",t:1760589808},
+  {u:"tirrrex02",t:1760367623},
+  {u:"son2_3_4",t:1760112121},
+  {u:"di_melison",t:1759977444},
+  {u:"its.polyaa",t:1759920892},
+  {u:"railsan",t:1759906523},
+  {u:"m.stelmashonok",t:1759906498},
+  {u:"walrus_punchs",t:1759906464},
+  {u:"mmaximnazarov",t:1759821169},
+  {u:"_him_event_group",t:1759699370},
+  {u:"120fps_off",t:1759698683},
+  {u:"geogarinov",t:1759672224},
+  {u:"zilberboben",t:1759672220},
+  {u:"__deleted__bhiebegehfaiedfid",t:1759512032},
+  {u:"ed_harbi",t:1759468516},
+  {u:"sweet_wooow.bc",t:1759311616},
+  {u:"qqtati",t:1759266040},
+  {u:"style_artsound",t:1759230764},
+  {u:"sonya_ginger",t:1759194699},
+  {u:"sally.dinosaur",t:1759062643},
+  {u:"noizy_wb",t:1758954233},
+  {u:"lerroma",t:1758758483},
+  {u:"sallydinosaur",t:1758624685},
+  {u:"mahavsekruto",t:1758585808},
+  {u:"lovkeyrussia",t:1758484329},
+  {u:"vskrsnsk_v",t:1758483654},
+  {u:"concerthall_event",t:1758464216},
+  {u:"reviva_events",t:1758464212},
+  {u:"taborkoo",t:1758191576},
+  {u:"evn_eny",t:1757949705},
+  {u:"taisa_aktrisa",t:1757852257},
+  {u:"daxaxa_21",t:1757628410},
+  {u:"note.tattoo.studio",t:1757513891},
+  {u:"bonnioxpetite__",t:1757501209},
+  {u:"ania_nuya",t:1757057963},
+  {u:"valapiki",t:1756813449},
+  {u:"gritsa.k",t:1756813322},
+  {u:"lizayush",t:1756624045},
+  {u:"_viki1993viki_",t:1756538629},
+  {u:"lydiavioletofficial",t:1756536135},
+  {u:"bardonata",t:1756357062},
+  {u:"piiinochka",t:1756356890},
+  {u:"annnosferatu",t:1756231323},
+  {u:"justyoursalice",t:1756230949},
+  {u:"_nastea_ru_",t:1756230771},
+  {u:"ruslan_renn",t:1756123919},
+  {u:"centr_life",t:1756108068},
+  {u:"vikamaxlive",t:1755545997},
+  {u:"skareeei",t:1755545429},
+  {u:"vetrovy__",t:1755544487},
+  {u:"sofia_isella",t:1755544133},
+  {u:"alex.minter",t:1755382979},
+  {u:"ulia.suhorukova",t:1755238521},
+  {u:"dashaboyko_",t:1755151949},
+  {u:"lotteegs",t:1755041793},
+  {u:"annakhilkevich",t:1754819548},
+  {u:"anton__38rus",t:1754672791},
+  {u:"milikoxy",t:1754361500},
+  {u:"princess_xoxocute",t:1754329558},
+  {u:"solazola_live",t:1754280332},
+  {u:"eleanorroseby",t:1754122742},
+  {u:"____pichuga____",t:1753690258},
+  {u:"shashka.u",t:1753667078},
+  {u:"vassaussa",t:1753624479},
+  {u:"d_taranov_777",t:1753560148},
+  {u:"_______katttya",t:1753531936},
+  {u:"anka.peresild_",t:1753404920},
+  {u:"gromshaa",t:1753163738},
+  {u:"_ruzholda",t:1752959363},
+  {u:"vikakissme_2000",t:1752922139},
+  {u:"mochikooke",t:1752891914},
+  {u:"juli.stellare",t:1752891895},
+  {u:"pervuhin__",t:1752817890},
+  {u:"lamu.rest",t:1752730566},
+  {u:"maidmana",t:1752729883},
+  {u:"asti",t:1752669523},
+  {u:"northwlnd",t:1752604830},
+  {u:"purplleegg",t:1752508049},
+  {u:"74a.lekseevn.a74",t:1752436516},
+  {u:"sergei.lunev_",t:1752431749},
+  {u:"wowrooms.irk",t:1752390999},
+  {u:"potapovfx",t:1752390592},
+  {u:"ektriin",t:1752251302},
+  {u:"kononovael",t:1751475622},
+  {u:"beerb0rn",t:1751451864},
+  {u:"xenpx.z",t:1751313361},
+  {u:"chern_alks",t:1751254873},
+  {u:"evilkaya",t:1751251687},
+  {u:"mykkyta_1",t:1751251530},
+  {u:"sovalev",t:1751250999},
+  {u:"spark.irk",t:1751211192},
+  {u:"__.dinero__",t:1751163218},
+  {u:"vallentina.ice",t:1750959122},
+  {u:"monorosso000",t:1750915161},
+  {u:"nastya_travelsmm",t:1750838603},
+  {u:"bvr_tattoo",t:1750744450},
+  {u:"_.zm.hmmm._",t:1750728913},
+  {u:"ksivnv",t:1750728718},
+  {u:"hefxtom",t:1750681916},
+  {u:"dulce_d83",t:1750598516},
+  {u:"s.o.f.i.a.882",t:1750598510},
+  {u:"_yanaayr_",t:1750241072},
+  {u:"z._tonya_.z",t:1750241053},
+  {u:"tikivirago",t:1750228188},
+  {u:"just_botsman_",t:1750228139},
+  {u:"saloedow",t:1750228009},
+  {u:"handygurus1",t:1750154179},
+  {u:"mary_h_s_c",t:1750149262},
+  {u:"tim_timon",t:1750142889},
+  {u:"gcomp_kg",t:1750050446},
+  {u:"venera1love",t:1749662885},
+  {u:"tot_kto_nenavidet_seb9",t:1749650612},
+  {u:"lana.shelll",t:1749559316},
+  {u:"tgk_nopowerbank",t:1749079822},
+  {u:"kinoluv7",t:1749030965},
+  {u:"sunset_by_ceh",t:1749016098},
+  {u:"misha29624",t:1748859782},
+  {u:"anastasiya_krrr",t:1748659815},
+  {u:"kolirova_",t:1748220630},
+  {u:"di.tsm2",t:1747971482},
+  {u:"_tomato_333_",t:1747878283},
+  {u:"diankaa_savitskaya",t:1747877972},
+  {u:"reislin_model",t:1747807307},
+  {u:"vv.letto",t:1747482725},
+  {u:"arkusha.a",t:1747335924},
+  {u:"pavelstepanovbbc",t:1747069960},
+  {u:"an.morzv",t:1747066680},
+  {u:"lyna_com2000",t:1747011046},
+  {u:"julia.gavrilina",t:1747011003},
+  {u:"mary.babyy1",t:1746880596},
+  {u:"pena_morskaya_lab",t:1746716687},
+  {u:"annfigma",t:1746108527},
+  {u:"annakendrick47",t:1746106541},
+  {u:"asuna_ninek",t:1746031156},
+  {u:"nestea_zzz",t:1745915999},
+  {u:"mr_freedman",t:1745458787},
+  {u:"milusik.liza",t:1744763044},
+  {u:"kisshall_restoshow",t:1744518410},
+  {u:"lovilove38",t:1744291176},
+  {u:"a_cup_of_mint_tea",t:1743944365},
+  {u:"vesninovaa",t:1743024895},
+  {u:"promashik_fyp",t:1743023683},
+  {u:"shmidos",t:1742698981},
+  {u:"kozzzzlova",t:1742361144},
+  {u:"bzlws.jewelry",t:1740811747},
+  {u:"los_sanches_go",t:1740648757},
+  {u:"n.doshik",t:1740395450},
+  {u:"nikita_boorbon",t:1740036584},
+  {u:"z1kon_3d",t:1739535948},
+  {u:"dashaceleste",t:1739535924},
+  {u:"irina__28v",t:1739274904},
+  {u:"anastasiya9997",t:1739193997},
+  {u:"realgirl_reels",t:1738696451},
+  {u:"6tvoya_feya6",t:1738235239},
+  {u:"solnyshko_nv",t:1738219384},
+  {u:"kvashenaya",t:1738038206},
+  {u:"irkutskhan",t:1737908689},
+  {u:"vishnevskaiazlata",t:1736970813},
+  {u:"itservice_shym",t:1736791824},
+  {u:"52il_yas52",t:1736751750},
+  {u:"snitssar",t:1735997678},
+  {u:"andreevgovorit",t:1735208745},
+  {u:"gorkesa",t:1735205944},
+  {u:"losenok95",t:1733684208},
+  {u:"circus_pub",t:1732732878},
+  {u:"renatarrii",t:1732325546},
+  {u:"youliakyolner",t:1730917091},
+  {u:"niyfulx",t:1729410084},
+  {u:"bzone_pc",t:1728861341},
+  {u:"gvay_vicki",t:1728573597},
+  {u:"serezhakillerr",t:1728573469},
+  {u:"lemonadi_kate",t:1728427499},
+  {u:"missha_ro",t:1728301241},
+  {u:"tanya.bayer.cos",t:1728228602},
+  {u:"lili.li_bu",t:1728228449},
+  {u:"sanyaok_live",t:1728054935},
+  {u:"txcstyle",t:1726873846},
+  {u:"l0_oking_4vard",t:1724271292},
+  {u:"sova_irkutsk",t:1723876552},
+  {u:"l_nigai",t:1723298924},
+  {u:"veranda_zuun_hagun",t:1722915447},
+  {u:"cvet21",t:1722863198},
+  {u:"lemovaolga",t:1721985943},
+  {u:"jewellery.school",t:1721920157},
+  {u:"anacaabeza",t:1721624101},
+  {u:"viki_odintcova",t:1721624052},
+  {u:"viangel___",t:1721623975},
+  {u:"polinamalinovskaya",t:1721623688},
+  {u:"liza_kordobovskaya",t:1721623478},
+  {u:"bayerborg",t:1721623114},
+  {u:"yamakasi_store",t:1721451153},
+  {u:"asuna__nineko",t:1721388228},
+  {u:"chilllays",t:1721359857},
+  {u:"meryline_key",t:1721239879},
+  {u:"marsa.chka",t:1720929503},
+  {u:"kinop_es",t:1720715680},
+  {u:"realbarbarapalvin",t:1720506656},
+  {u:"him_txt",t:1720167481},
+  {u:"champions_irkutsk",t:1720118603},
+  {u:"influesii",t:1720036785},
+  {u:"ksy_mrnv",t:1719899453},
+  {u:"lena_rass_",t:1719560070},
+  {u:"rustam_mayer",t:1719218958},
+  {u:"mmariyamii",t:1719001806},
+  {u:"kris.batkovna",t:1718613022},
+  {u:"chapaykaaa",t:1718436126},
+  {u:"denisovaek",t:1718276585},
+  {u:"edison_craft_bar",t:1718038797},
+  {u:"neegoduykoo",t:1717934667},
+  {u:"alinncess",t:1717683202},
+  {u:"lizoreliz",t:1717676539},
+  {u:"miliarder.team",t:1717277527},
+  {u:"s_m_i_l_s_",t:1716842480},
+  {u:"afanaseva_valeriya_",t:1716842406},
+  {u:"ellliza.vettta",t:1716842344},
+  {u:"anna.utka22",t:1716840371},
+  {u:"daria.savinaaa",t:1716829060},
+  {u:"qtnnas",t:1716827201},
+  {u:"nastasiii__",t:1716626132},
+  {u:"elizabethvasilenko",t:1716253247},
+  {u:"sergo_artemka",t:1716189274},
+  {u:"vladimkas",t:1715795675},
+  {u:"architect_jewelry",t:1715745314},
+  {u:"mayorkraft",t:1715721544},
+  {u:"kseniia_gorevich",t:1715514337},
+  {u:"uno.clown",t:1715462227},
+  {u:"whylollycry",t:1715461752},
+  {u:"katerinka.st",t:1715461678},
+  {u:"sonloran_",t:1715461255},
+  {u:"ginger_band_irk",t:1715424852},
+  {u:"liubov.oshurkova",t:1715357067},
+  {u:"goldschmiedekrauss",t:1715285964},
+  {u:"di.barbie",t:1715283845},
+  {u:"meowsiimm",t:1715269494},
+  {u:"dota2kg",t:1715089588},
+  {u:"ssscarfaccce_dota",t:1714938824},
+  {u:"_valentina__selina_24irk",t:1713877351},
+  {u:"iloveurings",t:1713210270},
+  {u:"keleos_p",t:1713203579},
+  {u:"mem_vkontakte",t:1712257541},
+  {u:"uff_look",t:1711526311},
+  {u:"solntseva_jewelry",t:1710728057},
+  {u:"autoschool_uu",t:1710700514},
+  {u:"rstgv_",t:1705170335},
+  {u:"nearyou1992",t:1704555349},
+  {u:"zubarefff",t:1704491432},
+  {u:"likemall_irk",t:1703233372},
+  {u:"user3457633566",t:1702746254},
+  {u:"teplo._.space",t:1702565785},
+  {u:"_glow_pearl9",t:1702559915},
+  {u:"kino_zdes38",t:1700308099},
+  {u:"shumband_irk",t:1699094845},
+  {u:"alishonik",t:1698931926},
+  {u:"_sophiaartist_",t:1698751995},
+  {u:"nadine.fadeeva",t:1696841947},
+  {u:"voisten10",t:1695397461},
+  {u:"gorod_questov_38",t:1695062558},
+  {u:"wrom_wroom",t:1691159834},
+  {u:"rishart_studio",t:1690892466},
+  {u:"gottemgcity",t:1690746226},
+  {u:"ponponponpou",t:1689743098},
+  {u:"po_piee",t:1689692531},
+  {u:"ewvilll",t:1689097812},
+  {u:"alexa.pedan",t:1688407443},
+  {u:"eva___ii",t:1687203132},
+  {u:"cinema_horror_hall",t:1686667733},
+  {u:"yakovlev_viktorson",t:1685183260},
+  {u:"alina_panezhda_",t:1678811021},
+  {u:"___cherkasovaa___",t:1678810650},
+  {u:"slikkotov",t:1675850809},
+  {u:"bertbergement",t:1674437860},
+  {u:"agafon_38",t:1671508548},
+  {u:"eastbarbaraa",t:1669388616},
+  {u:"cosstellazione",t:1667592105},
+  {u:"tenno_sushi38",t:1665380872},
+  {u:"mintmarys",t:1665379891},
+  {u:"nasttimetraveler",t:1662485763},
+  {u:"nerkomant",t:1661103741},
+  {u:"sko4sko4i",t:1659638033},
+  {u:"___anastasia_p__",t:1659574641},
+  {u:"dark_vade",t:1658931921},
+  {u:"andruskaos",t:1658855867},
+  {u:"petrucho_t",t:1658855857},
+  {u:"unplu999ed",t:1658592648},
+  {u:"god_gtr_zilla",t:1658448311},
+  {u:"nik.selin.03",t:1658247213},
+  {u:"malissssshkins",t:1658158731},
+  {u:"fakerekords",t:1652800164},
+  {u:"alalal_hpe",t:1652634832},
+  {u:"ego_raccoon18",t:1651547948},
+  {u:"somewhere.ana",t:1651162943},
+  {u:"realkilla.one",t:1650460631},
+  {u:"smrbrd.irk",t:1650121039},
+  {u:"lllina_sedova",t:1649772423},
+  {u:"decdence",t:1649584668},
+  {u:"kirill_demysh",t:1649198443},
+  {u:"prod.morin",t:1648056306},
+  {u:"aleksei.marushenko",t:1647964202},
+  {u:"ts_argo",t:1647915388},
+  {u:"_.hajime_records._",t:1647284988},
+  {u:"miyagi.andy_arm",t:1647284920},
+  {u:"walkinaftermidn8",t:1646305668},
+  {u:"temadyxcn",t:1645256911},
+  {u:"lelyamt2",t:1644946042},
+  {u:"il.erofeev",t:1644078208},
+  {u:"vasya_konstantinov_",t:1643282836},
+  {u:"sobakaphotoshopa",t:1643093545},
+  {u:"ka_______0.1",t:1642899055},
+  {u:"yana_nabi_",t:1642152794},
+  {u:"ll_k.i.r.a_ll",t:1641643839},
+  {u:"marias_va",t:1641423901},
+  {u:"sweetness156",t:1640801497},
+  {u:"_shervil_",t:1640606294},
+  {u:"_anylea",t:1640088998},
+  {u:"v_ss.s",t:1639762016},
+  {u:"kosheleva155",t:1639081800},
+  {u:"6_silya_sav_6",t:1638958162},
+  {u:"kom_voel_my",t:1638820048},
+  {u:"diana_travina20",t:1638715466},
+  {u:"twitch.clown",t:1638462115},
+  {u:"kolesnikova98anna",t:1637858924},
+  {u:"_anastasia.017",t:1637836611},
+  {u:"chuzhoi_marsiani",t:1637776942},
+  {u:"medvedalex38",t:1637520918},
+  {u:"lexieuww",t:1636810808},
+  {u:"etazhik",t:1636781518},
+  {u:"renigate.club",t:1636706425},
+  {u:"colizeum_irkutsk",t:1636706349},
+  {u:"rolllaja",t:1636636744},
+  {u:"nepriyatni_tip",t:1636628173},
+  {u:"projectx.prvt",t:1636551892},
+  {u:"sapersh38",t:1636343103},
+  {u:"lesha_morin420",t:1636004842},
+  {u:"mortisay",t:1635091990},
+  {u:"_1_arina",t:1635075513},
+  {u:"bugaaevaa",t:1634610728},
+  {u:"hajime__13",t:1634277548},
+  {u:"sexysecondshmexy",t:1633906054},
+  {u:"9.12von",t:1633451097},
+  {u:"6_ilya_savelev_6",t:1630597012},
+  {u:"sofya_stremedlovskaya",t:1629967125},
+  {u:"katerrrri",t:1629892278},
+  {u:"9ateist_ot_boga6",t:1629712994},
+  {u:"dianchikass",t:1628708142},
+  {u:"ssssshhark",t:1627844998},
+  {u:"budaog",t:1627815436},
+  {u:"enigma_gaming38",t:1627732128},
+  {u:"iuliia.3611",t:1627214330},
+  {u:"labelcomedians",t:1626689982},
+  {u:"speedchasersusa",t:1626535445},
+  {u:"nismo89",t:1626446455},
+  {u:"polemic.irk",t:1623846324},
+  {u:"rezutara",t:1623594303},
+  {u:"tattoo.bounty.spb",t:1623236967},
+  {u:"_nastepanarazina_",t:1621399395},
+  {u:"electroland_irkutsk",t:1620923564},
+  {u:"6_ilyas_safelev_6",t:1615883770},
+  {u:"real_scrip",t:1613997537},
+  {u:"hajimerecords",t:1613715030},
+  {u:"endspiel_andy_panda",t:1613714982},
+  {u:"0rer5a",t:1612877443},
+  {u:"miyagi_endspiel__",t:1612362165},
+  {u:"colizeumcamp_irkutsk_gogol",t:1611762133},
+  {u:"cyberxirkutsk",t:1611761937},
+  {u:"skylineclub_irk",t:1611761808},
+  {u:"olga_budovskaya70",t:1611742958},
+  {u:"na.blok",t:1611318752},
+  {u:"asa_privet33",t:1611052374},
+  {u:"_st_tarracotta",t:1610818403},
+  {u:"avtodiff",t:1606315739},
+  {u:"citra_ykt",t:1604838796},
+  {u:"yo.asa.kura",t:1604702675},
+  {u:"revizorro_irk",t:1603552514},
+  {u:"sexyshmaxy",t:1602270305},
+  {u:"polonskiinaum",t:1601902319},
+  {u:"brokeboy_og",t:1600445889},
+  {u:"nikifilini",t:1600400318},
+  {u:"_av_konareva_",t:1599803127},
+  {u:"real_girl_music",t:1599410938},
+  {u:"kurthh88",t:1599290637},
+  {u:"_blick.fm_",t:1598955883},
+  {u:"_vct_ry",t:1598645534},
+  {u:"neon.saintp",t:1598329039},
+  {u:"projectxirkutsk",t:1597414886},
+  {u:"street.pls",t:1597412304},
+  {u:"reprise.event",t:1596606523},
+  {u:"vsbattle_videos",t:1595062914},
+  {u:"bbyjullli",t:1594055778},
+  {u:"_viennae_",t:1592372500},
+  {u:"morgen_shtern",t:1591904633},
+  {u:"zloybrand",t:1591278697},
+  {u:"znaalmnogo",t:1590436019},
+  {u:"ddiavvollo",t:1588095012},
+  {u:"katerina_138___",t:1587743683},
+  {u:"senvensa",t:1587610618},
+  {u:"nesteminekogda",t:1587610452},
+  {u:"lalibie",t:1587590511},
+  {u:"yourdealller",t:1587590330},
+  {u:"ana.stacy.ya",t:1587572676},
+  {u:"afanaseva.valeriya",t:1582339601},
+  {u:"sladislavv",t:1580780666},
+  {u:"soroka_med",t:1579707528},
+  {u:"elensaprykina",t:1579433336},
+  {u:"anyaischuk",t:1575867523},
+  {u:"dimagordey",t:1571938305},
+  {u:"__sap__38",t:1568433885},
+  {u:"svodka38",t:1564420435},
+  {u:"terentivid",t:1563880577},
+  {u:"rekrutov.138",t:1562421121},
+  {u:"444izhov",t:1561683190},
+  {u:"katekirienko",t:1531141698},
+  {u:"k.boscorelli",t:1527477452},
+  {u:"vi.zheppa",t:1527323142},
+  {u:"voronaya.olya",t:1527315057},
+  {u:"bo.vii",t:1526939494},
+  {u:"margotrobbie",t:1526939132},
+  {u:"budda.90",t:1526939037},
+  {u:"kirchanova_",t:1526929924}
+];
+
+/* ============================================================
+   Фильтрация: оставляем только те, кого нет в followers_1.json
+   ============================================================ */
+const followersSet = new Set([
+  "prosto_viktor_serebrennikov","vfreka","sf_00326","verabaksheeva","doyvber",
+  "budovskaya_alena","circus_pub","lonely_daimyo","diyanaaywyt","nickvoroninmusic",
+  "beast_in_chains_flava","hmwri.notes","sergei.sporyshev","april28lit","munsloon",
+  "nektofil","leryasv","meow_mirra","b_o_s_t_o_n_19","serrrbest","desire_most",
+  "lapin.house38","devilish__sunset","chef.elkoumka","farfordarkcabaret","mikoksen",
+  "fil_kaaaaa","lucky_rat13","alex_hal4enok","vinogradova__0318","jul_zag",
+  "iamvary.ss","iamvarya.ss","soro_tsu","_memorio4_","atixsf","volkovaaa_0",
+  "cyber_bebra","_boy_138","vuradisurafuu","barhatattoo","skeinst","rekryyyt",
+  "agmeshaav","tasyauniverse","kiklberi","galin_a0408","shatun.rp","moon.cakeeee",
+  "k.raiskaia_","alice_in_chains._","d_davydov_","vskrsnsk_v","tinaoyoy",
+  "semnernova","seen_it_sah","kslv_ann","dar_lit__","el_tema_rogov","roman_smlnnv",
+  "putrefied","sham.mirror","electric_preacher","krillw","lilia_bulina",
+  "_.s.ptashka.d._","___moonshin_","naaistee","zelya_nah","anastasijes",
+  "kat.doronina","vladimkas","pion_alena","aadrunkk","lbabypp","alice_che_",
+  "i_am_burry_","valya_artemeva","true_sicky","lucosmolu","_vdm_nvdmv_",
+  "__kristinayrieva__","bbrryysss","sofiykko","fox7812","reblok_nik666",
+  "m.stelmashonok","sweet_wooow.bc","kolirova_","railsan","walrus_punchs",
+  "zilberboben","ed_harbi","sonya_ginger","evn_eny","_viki1993viki_","_nastea_ru_",
+  "ruslan_renn","anton__38rus","____pichuga____","ektriin","nestea_zzz","beerb0rn",
+  "chern_alks","vallentina.ice","s.o.f.i.a.882","dulce_d83","z._tonya_.z",
+  "_yanaayr_","tot_kto_nenavidet_seb9","pena_morskaya_lab","kar1movvv77",
+  "a_cup_of_mint_tea","_ds_diad","los_sanches_go","n.doshik","z1kon_3d",
+  "dashaceleste","irina__28v","anastasiya9997","solnyshko_nv","irkutskhan",
+  "52il_yas52","snitssar","andreevgovorit","wankavill","serezhakillerr",
+  "lemonadi_kate","lili.li_bu","sanyaok_live","txcstyle","l0_oking_4vard",
+  "l_nigai","lemovaolga","bayerborg","meryline_key","kris.batkovna","lizoreliz",
+  "dorimmmon","shumband_irk","nastasiii__","architect_jewelry","liubov.oshurkova",
+  "rstgv_","nearyou1992","alishonik","nadine.fadeeva","lashmaker_brows_master38",
+  "wrom_wroom","yakovlev_viktorson","replicshop38","otra.vez.19","alina_panezhda_",
+  "slikkotov","agafon_38","eastbarbaraa","mag_gadanie_1","mintmarys","6tvoya_feya6",
+  "nasttimetraveler","nerkomant","sko4sko4i","dark_vade","andruskaos","petrucho_t",
+  "unplu999ed","_valentina__selina_24irk","nik.selin.03","malissssshkins",
+  "tobiasbattle81","alalal_hpe","gimdohyi869","ego_raccoon18","_lucky_liya",
+  "realkilla.one","lllina_sedova","decdence","_glow_pearl9","kirill_demysh",
+  "tiktok.pretty","skksdldld","neo_leye","vesnushka_nst","repir404","hjdsfghg",
+  "temadyxcn","mc.julianna.267","il.erofeev","kris_myyr","vasya_konstantinov_",
+  "sobakaphotoshopa","hi.lilah_247","zzzz_z5416","ka_______0.1","drss.irene.386",
+  "yana_nabi_","afanaseva_valeriya_","ll_k.i.r.a_ll","maskws__","sweetness156",
+  "berezovskijnikolaj44","second_minsk_cheap","_anylea","tomato_magica","v_ss.s",
+  "evoitikunova","dolgov_liokha","6_silya_sav_6","kom_voel_my","renigate.club",
+  "00.opisanie.00","kolesnikova98anna","masha_goryashina","_anastasia.017",
+  "deaddima1","chuzhoi_marsiani","tanyadalyy","sbermarket_fortuna","alenochkada",
+  "charming27777","nklvspk","lexieuww","rolllaja","gulnaz_nails_2024","sapersh38",
+  "piskapunk","ekaterina_kostyukova_tutor","lesha_morin420","_v_a_p_e_mania",
+  "roudlon_fauzani","samsonel_99","roberts16_","gonzalez.paca","sandorthewise",
+  "toku1978.12.20","fikrovaolga","konstancjafabisiak","paulpicotin","iliketraveling_",
+  "blackarabian530_","montse.garciagurv.ca","leonardo27.6.2006","kevi_cell",
+  "werthankclusener982","rieweiburesar36","larraconsboudia357","sinkingdiperhu313",
+  "siapreviranam267","nacomlawenceu485","hilveranrab94","pulllichchecaflar106",
+  "tilcontremiban360","grifraderegi821","samplosrapeeal198","tersnimarraan318",
+  "hoagerpmasleb393","mindescjecorb136","topahunmob585","cielilycabgui113",
+  "towsderecob947","clarapanchurb70","maisechilib27","renredownkutzloa742",
+  "sermifacwispec517","proctouvirdioel994","cialjobovrinb712","edewopgemat397",
+  "trigpinimuma594","peachtpodehipbe619","praberaperb780","newgentcogabird212",
+  "lunchtofounbeb997","reicalpodersdio40","brodcapseyfripphtam498","resnoiwenvab281",
+  "creencalarowb731","dunnmomerringpost534","kanssastbarphopick935","mwoodajmatmib675",
+  "hinsmareroov508","nalchvenligarme173","tiorestotacb117","loomilvorob965",
+  "trodersansiun130","casixnecysb619","semebarsingcie38","imparbireb998",
+  "kingplacdelsperun490","thelpnihydade796","daimotecycli390","barbaraqrodriguezs195",
+  "mariapleeo753","mariagtaylorg631","laurankingy265","carollwilliamsu437",
+  "sharonsjacksony523","helenfkingw117","lisatgarciac081","michellenwhitez877",
+  "laurahmartinr651","kimberlykclarko385","lindadcarteri988","sarahbmillerh676",
+  "helenfrobertsv995","nancywturnerb847","susannthomasl914","michelleihillg139",
+  "sharonsandersonh400","nancyqwilsonw744","sharonyandersonu580","susandlewisg410",
+  "barbarafgreeng657","elizabethnrodriguezv837","maryvallenm327","mariajscottn182",
+  "sharonhtaylorn371","elizabethhnelsonr346","mariasthompsony706","mariaeharrisv848",
+  "deborahuyoungd790","donnafgreenw105","patriciahthompsonq819","deboraheevansm349",
+  "helenwadamsc265","patriciaygarciav691","elizabethascottg525","michellebcarteru870",
+  "irachemanoli_2710","jame_swill001","reklama.l1","ashitkovagortenziya",
+  "gavronskayaulita","bezborodkostanislava","protasevaarseniya","neofitovaklara",
+  "golubeczapollinariya","moshkovayusta","batvinevaarisa","afremovafeoktista",
+  "shherbakarina","var.varadrozdova650","mari_iazinoveva119","garasimovaolimpiada",
+  "davidovich.yusta","shafonskayamelanya","magdalinavoeczkaya","tenishevanastasya",
+  "danilovaangelina51","golubparaskeva","hitrovamatrona","yagodinskayaolimpiada",
+  "tolstayarufina","skuratovaczecziliya","vetoshnikova41","arina_filatova670",
+  "tropcopotaback818","alek.sandrazaitseva2026","volkfefyola","kuchinamirra",
+  "tuchkovamarkella","volzhinaalina","bahteyarovakira","vas.ilisameshkova580",
+  "belavinabronislava","poroshinaadel","glushkovaalyona","zasekinaelikonida",
+  "clenoutmijohnb601","pinskayaglafira","voloczkayalukerya","taube407",
+  "grechaninovataisya","yaninakrekshina","zhukovayudif","zoyahvoshhinskaya",
+  "shishmaryovapalageya","mozyrinayustina","antonida6492","krauzemokrina",
+  "bernaczkayamarkiana","kamilla.panteleeva","akulinahristorozhdenstv",
+  "anabscorgab74","esipovichrufina","yakimovaavrora","anikeevayustina",
+  "behteevadosifeya","nesodideyl204","pisarchukvitalina","lyapishevavanda",
+  "izmalkovaevlampiya","hodnevaantoniya","derzhavinaharita","timonmimeab156",
+  "tarhanovaiulitta","marchenkomirra","ivanchenkoadel","agarkovasofiya",
+  "kablukovaadelaida","anast_asiiavereshchagina593","kalovskayafomaida",
+  "ali_saefremova427","ciafresexabb996","spoutunposob835","garyushkinaulita",
+  "adlerbergmagda","penbercsislib68","vodova_marina","shebanovaklavdiya",
+  "garasimovaizolda","eka_terinadavydova541","statinlearandb874","pasevevasharlotta",
+  "stoczkayaandriana","trubeczkayaveronika","zolotilovaagafya","kremer7167",
+  "copilysearb290","gavronskayaliliya","glinkakseniya","voropanovamatrona",
+  "golenkinalyudmila","ekate_rinacherkasova111","ofrosimovasilviya",
+  "emelkinaadriana","shherbakovafeklista","zykovakikiliya","sectithegangal782",
+  "kartamyshevakira","bergeranatoliya","ksen.iiabogomolova843","menyaevamavra",
+  "galahovaarkadiya","posttiderenb842","pronchishhevaadelfina","saouberpacorneu719",
+  "ershovaantonina34","sverbeevaarkadiya","kira.rodina92","krasinskaya.kristina",
+  "baskakova7864","ostrozhskayaaglaida","valmasovayudif","zlobafotida",
+  "uli.anakalmykova495","poletyloalina","bryanchaninovaekaterina",
+  "vahrameevafeoktista","ulgranerforb365","astahovapelagiya","iren.emurray581",
+  "obuhovavilgelmina","bratczovaarisa","nersugefirmscar649","chikunskayavladislava",
+  "idealelrayrio779","mariyavorotynskaya","kyagroovcountflapcess798",
+  "rocalhakecoup397","cherkudinovamarianna","grumningroughtenb233","tradunarerdam194",
+  "kraevskayatamila","veron_ikanazarova621","dedyulinaagrippina","valkevicheleonora",
+  "brusilova80","rsininsalib659","mednikova7487","tarhanovairina","gulevichsalomiya",
+  "dunherzdispbob479","platasridfib117","vanes_samcdonald26","kolosovskaya.yuliya",
+  "roplobulveb783","yakunina.izabella","eropkinaisidora","worlbenemier807",
+  "arharovaakvilina","penjohntensingli389","flavianavolf","kaverinafeklista",
+  "vislenevaalisa","ritityteb82","vitelevaviktorina","yurlovazhdana",
+  "lamanskayaolimpiada","varsonofevaoktyabrina","golovinskayakira",
+  "dari.anefedova28","maevskayamarionilla","panaevairaida","vyrodovaolimpiya",
+  "mar_inakiseleva823","simerbeigurpat738","lvovaanatoliya","ipatovaviola",
+  "steladherpergb395","buharinagorislava","neusmidfiwuprec734","perfilevaevgeniya",
+  "newsfoxrorab665","starinpruncinb675","snorersislecar639","kira.suslova437",
+  "mar.garitakomarova477","zlat_adorofeeva20","boltovamarfa","behteevamarkellina",
+  "anas.tasiiagorbacheva562","hitrovarufina","pestrikovaalisava","pazuhinaaida",
+  "virg_iniahoward851","emmeylandsetject543","kvashninaivanna","nigewhelerb63",
+  "ruzhinskayaulita","bolotnikovaevlaliya","shheglovanonna","var.varalebedeva560",
+  "ipatovichyuliana","krushevskayamarlena","artem_tem_t","webochachoskaaa",
+  "memes4d_proude_","zadedoff","_1_nastya_","sexysecondshmexy","eva___ii",
+  "12kasimov","9.12von","___peonia___38","amandaafe22","ekat.erina_28.59",
+  "nedraproject","katerina_138___","znakomsya__vip18","_minotaur_gym",
+  "sofya_stremedlovskaya","katerrrri","9ateist_ot_boga6","6_ilya_savelev_6",
+  "alexa.pedan","dianchikass","alymova1323","ssssshhark","iuliia.3611",
+  "vikakissme_2000","whatsap_205","senmoreno2","kristinapoperecnaa35",
+  "inveestor_mlm","sopranno_11","dr.seldie","______f_a_k_e",
+  "prava.kypit.russia","sleepy_parplic","kmkmkm3011","weeew.hype",
+  "bingobongo.shop","sosi_pisos_suka1","dth.jewelry_rezerv","golden_style163",
+  "albina.shev","yan_gara_production","po_piee","anstyxa","maks38he",
+  "prod.morin","hassle_irk","popka8814","6_ilyas_safelev_6","gottemgcity",
+  "vi_ka_gri_38","0rer5a","saryt_rrghuu","sem.al98","asa_privet33",
+  "_st_tarracotta","_iamli__","dating_russia_ukraine","_.zm.hmmm._",
+  "alexashkin_","yo.asa.kura","elensaprykina","georgij_matveev","sexyshmaxy",
+  "polonskiinaum","space__lounge","_blick.fm_","__p_o_l_i_n_a__18",
+  "brokeboy_og","_av_konareva_","ksy_mrnv","kurthh88","vault_tipograf",
+  "nikola_o.g","bbyjullli","_viennae_","malibu_cosmetology","terentivid",
+  "ddiavvollo","nesteminekogda","yourdealller","senvensa","lalibie",
+  "ana.stacy.ya","an_ar_33","kid_dynamitte","olga_budovskaya70",
+  "tagonist","ahmedsalam7173","sladislavv","yarmarka_irk38",
+  "__sap__38","soroka_med","bright_rainbow7","444izhov","iscreamroll_irk",
+  "olya.andriyanova97","tattoo.bounty.spb","rekrutov.138","gassdloki",
+  "citra_ykt","auuuuuuuuuuuuuf","study.czech.ju","ohranakvadr","mediamax",
+  "28_vera_06","zapravka_cartridg_irkutsk","obiavleniya38","dmitrievaanutka7",
+  "iks_38","medvedalex38","k.boscorelli","voronaya.olya","hsm.8193",
+  "lilj9753","bo.vii","budda.90","nados3235","_daria.d__"
+]);
+
+// Оставляем только тех, кого нет в followers, и сортируем по дате (новые сверху)
+const filtered = accounts
+  .filter(a => !followersSet.has(a.u))
+  .sort((a, b) => b.t - a.t);
+
+/* ============================================================
+   Состояние и localStorage
+   ============================================================ */
+const LS_KEY = 'ig_unfollow_done_v1';
+let doneSet = new Set();
+try {
+  const raw = localStorage.getItem(LS_KEY);
+  if (raw) doneSet = new Set(JSON.parse(raw));
+} catch(e) {}
+
+function saveDone(){
+  try { localStorage.setItem(LS_KEY, JSON.stringify([...doneSet])); } catch(e) {}
+}
+
+/* ============================================================
+   Форматирование даты
+   ============================================================ */
+function fmtDate(ts){
+  const d = new Date(ts * 1000);
+  const dd = String(d.getDate()).padStart(2,'0');
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  return `${dd}.${mm}.${yyyy}`;
+}
+
+/* ============================================================
+   Рендер
+   ============================================================ */
+const listEl = document.getElementById('list');
+const countEl = document.getElementById('count');
+const searchEl = document.getElementById('search');
+const sortDateBtn = document.getElementById('sortDate');
+const sortAlphaBtn = document.getElementById('sortAlpha');
+const resetBtn = document.getElementById('resetBtn');
+const doneCountEl = document.getElementById('doneCount');
+const totalCountEl = document.getElementById('totalCount');
+const percentEl = document.getElementById('percent');
+const barFillEl = document.getElementById('barFill');
+
+let sortMode = 'date'; // 'date' | 'alpha'
+let currentSearch = '';
+
+function updateProgress(){
+  const total = filtered.length;
+  const done = filtered.filter(a => doneSet.has(a.u)).length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  doneCountEl.textContent = done;
+  totalCountEl.textContent = total;
+  percentEl.textContent = pct + '%';
+  barFillEl.style.width = pct + '%';
+}
+
+function render(){
+  const f = currentSearch.trim().toLowerCase();
+  let arr = filtered.slice();
+  if (f) arr = arr.filter(a => a.u.toLowerCase().includes(f));
+  if (sortMode === 'alpha') arr.sort((a,b) => a.u.localeCompare(b.u));
+  else arr.sort((a,b) => b.t - a.t);
+
+  listEl.innerHTML = '';
+  arr.forEach((acc, i) => {
+    const isDone = doneSet.has(acc.u);
+    const row = document.createElement('div');
+    row.className = 'row' + (isDone ? ' done' : '');
+    row.innerHTML = `
+      <div class="num">${i + 1}</div>
+      <input type="checkbox" ${isDone ? 'checked' : ''} data-u="${acc.u}">
+      <div class="name" data-u="${acc.u}">@${acc.u}</div>
+      <div class="date">${fmtDate(acc.t)}</div>
+      <div class="actions">
+        <button class="btn unfollow" data-u="${acc.u}">Отписаться</button>
+      </div>
+    `;
+    listEl.appendChild(row);
+  });
+
+  countEl.textContent = `Всего в списке: ${filtered.length} · Показано: ${arr.length} · Отписано: ${filtered.filter(a=>doneSet.has(a.u)).length}`;
+  updateProgress();
+}
+
+/* ============================================================
+   Обработчики
+   ============================================================ */
+listEl.addEventListener('change', e => {
+  if (e.target.type === 'checkbox'){
+    const u = e.target.dataset.u;
+    if (e.target.checked) doneSet.add(u); else doneSet.delete(u);
+    saveDone();
+    e.target.closest('.row').classList.toggle('done', e.target.checked);
+    updateProgress();
+    countEl.textContent = `Всего в списке: ${filtered.length} · Отписано: ${filtered.filter(a=>doneSet.has(a.u)).length}`;
+  }
+});
+
+listEl.addEventListener('click', e => {
+  // Клик по имени — открыть профиль
+  if (e.target.classList.contains('name')){
+    window.open(`https://www.instagram.com/${e.target.dataset.u}/`, '_blank', 'noopener');
+    return;
+  }
+  // Клик по кнопке «Отписаться»
+  if (e.target.classList.contains('unfollow')){
+    const u = e.target.dataset.u;
+    window.open(`https://www.instagram.com/${u}/`, '_blank', 'noopener');
+    // Автоматически отмечаем как «отписан» (можно снять галочку вручную)
+    doneSet.add(u);
+    saveDone();
+    const row = e.target.closest('.row');
+    row.classList.add('done');
+    row.querySelector('input[type="checkbox"]').checked = true;
+    updateProgress();
+    countEl.textContent = `Всего в списке: ${filtered.length} · Отписано: ${filtered.filter(a=>doneSet.has(a.u)).length}`;
+  }
+});
+
+searchEl.addEventListener('input', e => {
+  currentSearch = e.target.value;
+  render();
+});
+
+sortDateBtn.addEventListener('click', () => {
+  sortMode = 'date';
+  sortDateBtn.classList.add('active');
+  sortAlphaBtn.classList.remove('active');
+  render();
+});
+
+sortAlphaBtn.addEventListener('click', () => {
+  sortMode = 'alpha';
+  sortAlphaBtn.classList.add('active');
+  sortDateBtn.classList.remove('active');
+  render();
+});
+
+resetBtn.addEventListener('click', () => {
+  if (!confirm('Сбросить все отметки «отписано»?')) return;
+  doneSet = new Set();
+  saveDone();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
